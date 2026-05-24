@@ -1,0 +1,14 @@
+# Si usas C / C++ (Ejecutables y objetos)
+*.o
+*.out
+*.exe
+
+# Si usas Python (Entornos virtuales y caché)
+__pycache__/
+*.pyc
+venv/
+.venv/
+
+# Archivos del sistema u organización
+.DS_Store
+Thumbs.db
