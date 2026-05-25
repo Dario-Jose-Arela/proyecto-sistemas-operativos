@@ -11,6 +11,8 @@ class Proceso:
         self.restante = int(ejecucion)
 
         self.memoria = int(memoria)
+        
+        self.cargado = False
 
         # Métricas
         self.inicio = None
