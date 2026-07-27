@@ -33,6 +33,10 @@ class SistemaOperativoGUI:
 
         self.bloque_gantt = 40
 
+        self.velocidad = tk.IntVar()
+
+        self.velocidad.set(500)
+
         self.crear_widgets()
 
     # =====================================================
@@ -172,6 +176,39 @@ class SistemaOperativoGUI:
         self.btn_inicio.pack(
             side="right",
             padx=20
+        )
+
+        # =============================================
+# CONTROL VELOCIDAD
+# =============================================
+
+        tk.Label(
+            top,
+            text="Velocidad",
+            font=("Arial", 12),
+            fg="white",
+            bg="#1e1e1e"
+        ).pack(
+            side="right",
+            padx=5
+        )
+
+        slider = tk.Scale(
+            top,
+            from_=50,
+            to=2000,
+            resolution=50,
+            orient="horizontal",
+            variable=self.velocidad,
+            bg="#1e1e1e",
+            fg="white",
+            highlightthickness=0,
+            length=200
+        )
+
+        slider.pack(
+            side="right",
+            padx=10
         )
 
         # =================================================
@@ -524,9 +561,9 @@ class SistemaOperativoGUI:
         ):
 
             self.root.after(
-                10,
+                self.velocidad.get(),
                 self.actualizar
-            )
+        )
 
         else:
 
