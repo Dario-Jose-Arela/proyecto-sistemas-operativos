@@ -11,33 +11,58 @@ class SistemaOperativoGUI:
     def __init__(self, root):
 
         self.root = root
-
-        self.root.title(
-            "Simulador de Sistema Operativo"
-        )
-
-        self.root.geometry("1400x900")
+        self.root.title("Simulador de Sistema Operativo")
+        self.root.geometry("1400x950")
+        self.root.minsize(1100, 750)
 
         # Ruta CSV por defecto
         self.ruta_csv = "data/procesos.csv"
 
         # Procesos iniciales
-        procesos = leer_procesos(
-            self.ruta_csv
-        )
+        procesos = leer_procesos(self.ruta_csv)
 
         self.sim = SimuladorSO(procesos)
 
-        # Variables Gantt
+        # Variables del diagrama de Gantt
         self.gantt_x = 20
-
         self.bloque_gantt = 40
 
-        self.velocidad = tk.IntVar()
+        # Velocidad de simulación en milisegundos
+        self.velocidad = tk.IntVar(value=500)
 
-        self.velocidad.set(500)
+        # Control para evitar varias simulaciones simultáneas
+        self.after_id = None
+        self.simulacion_activa = False
+
+        # Paleta utilizada para procesos
+        self.lista_colores = [
+            "#87CEEB",
+            "#90EE90",
+            "#FFA500",
+            "#FFC0CB",
+            "#FFFF00",
+            "#FF6347",
+            "#40E0D0",
+            "#9370DB",
+            "#00FA9A",
+            "#FF69B4",
+            "#CD5C5C",
+            "#7B68EE",
+            "#3CB371",
+            "#FFD700",
+            "#6495ED",
+            "#DC143C",
+            "#00CED1",
+            "#BA55D3",
+            "#F4A460",
+            "#20B2AA"
+        ]
 
         self.crear_widgets()
+
+        # Dibujos iniciales
+        self.dibujar_memoria()
+        self.dibujar_disco()
 
     # =====================================================
     # INTERFAZ
@@ -46,7 +71,7 @@ class SistemaOperativoGUI:
     def crear_widgets(self):
 
         # =================================================
-        # TOP BAR
+        # BARRA SUPERIOR
         # =================================================
 
         top = tk.Frame(
@@ -54,7 +79,6 @@ class SistemaOperativoGUI:
             bg="#1e1e1e",
             height=80
         )
-
         top.pack(fill="x")
 
         # =============================================
@@ -64,14 +88,13 @@ class SistemaOperativoGUI:
         self.label_tiempo = tk.Label(
             top,
             text="Tiempo: 0",
-            font=("Arial", 18, "bold"),
+            font=("Arial", 17, "bold"),
             fg="white",
             bg="#1e1e1e"
         )
-
         self.label_tiempo.pack(
             side="left",
-            padx=20,
+            padx=15,
             pady=20
         )
 
@@ -82,25 +105,30 @@ class SistemaOperativoGUI:
         self.label_cpu = tk.Label(
             top,
             text="CPU: Libre",
-            font=("Arial", 18, "bold"),
+            font=("Arial", 17, "bold"),
             fg="cyan",
             bg="#1e1e1e"
         )
-
         self.label_cpu.pack(
             side="left",
-            padx=20
+            padx=15
         )
 
         # =============================================
         # SELECTOR CPU
         # =============================================
 
-        self.cpu_var = tk.StringVar()
+        tk.Label(
+            top,
+            text="CPU:",
+            font=("Arial", 10, "bold"),
+            fg="white",
+            bg="#1e1e1e"
+        ).pack(side="left", padx=(10, 2))
 
-        self.cpu_var.set("FCFS")
+        self.cpu_var = tk.StringVar(value="FCFS")
 
-        cpu_combo = ttk.Combobox(
+        self.cpu_combo = ttk.Combobox(
             top,
             textvariable=self.cpu_var,
             values=[
@@ -109,23 +137,29 @@ class SistemaOperativoGUI:
                 "SRT",
                 "RR"
             ],
-            width=10
+            width=8,
+            state="readonly"
         )
-
-        cpu_combo.pack(
+        self.cpu_combo.pack(
             side="left",
-            padx=10
+            padx=5
         )
 
         # =============================================
         # SELECTOR MEMORIA
         # =============================================
 
-        self.mem_var = tk.StringVar()
+        tk.Label(
+            top,
+            text="RAM:",
+            font=("Arial", 10, "bold"),
+            fg="white",
+            bg="#1e1e1e"
+        ).pack(side="left", padx=(10, 2))
 
-        self.mem_var.set("First Fit")
+        self.mem_var = tk.StringVar(value="First Fit")
 
-        mem_combo = ttk.Combobox(
+        self.mem_combo = ttk.Combobox(
             top,
             textvariable=self.mem_var,
             values=[
@@ -134,12 +168,42 @@ class SistemaOperativoGUI:
                 "Worst Fit",
                 "Buddy System"
             ],
-            width=15
+            width=13,
+            state="readonly"
+        )
+        self.mem_combo.pack(
+            side="left",
+            padx=5
         )
 
-        mem_combo.pack(
+        # =============================================
+        # SELECTOR DE ALMACENAMIENTO
+        # =============================================
+
+        tk.Label(
+            top,
+            text="Disco:",
+            font=("Arial", 10, "bold"),
+            fg="white",
+            bg="#1e1e1e"
+        ).pack(side="left", padx=(10, 2))
+
+        self.storage_var = tk.StringVar(value="Contigua")
+
+        self.storage_combo = ttk.Combobox(
+            top,
+            textvariable=self.storage_var,
+            values=[
+                "Contigua",
+                "Enlazada",
+                "Indexada"
+            ],
+            width=11,
+            state="readonly"
+        )
+        self.storage_combo.pack(
             side="left",
-            padx=10
+            padx=5
         )
 
         # =============================================
@@ -149,15 +213,16 @@ class SistemaOperativoGUI:
         self.btn_cargar = tk.Button(
             top,
             text="Cargar CSV",
-            font=("Arial", 12),
-            bg="#444",
+            font=("Arial", 11),
+            bg="#444444",
             fg="white",
+            activebackground="#555555",
+            activeforeground="white",
             command=self.cargar_archivo
         )
-
         self.btn_cargar.pack(
             side="right",
-            padx=10
+            padx=8
         )
 
         # =============================================
@@ -166,34 +231,35 @@ class SistemaOperativoGUI:
 
         self.btn_inicio = tk.Button(
             top,
-            text="Iniciar Simulación",
-            font=("Arial", 14),
+            text="Iniciar",
+            font=("Arial", 12, "bold"),
             bg="green",
             fg="white",
+            activebackground="#007000",
+            activeforeground="white",
             command=self.iniciar_simulacion
         )
-
         self.btn_inicio.pack(
             side="right",
-            padx=20
+            padx=10
         )
 
         # =============================================
-# CONTROL VELOCIDAD
-# =============================================
+        # CONTROL DE VELOCIDAD
+        # =============================================
 
         tk.Label(
             top,
             text="Velocidad",
-            font=("Arial", 12),
+            font=("Arial", 10),
             fg="white",
             bg="#1e1e1e"
         ).pack(
             side="right",
-            padx=5
+            padx=3
         )
 
-        slider = tk.Scale(
+        self.slider_velocidad = tk.Scale(
             top,
             from_=50,
             to=2000,
@@ -203,12 +269,11 @@ class SistemaOperativoGUI:
             bg="#1e1e1e",
             fg="white",
             highlightthickness=0,
-            length=200
+            length=150
         )
-
-        slider.pack(
+        self.slider_velocidad.pack(
             side="right",
-            padx=10
+            padx=5
         )
 
         # =================================================
@@ -218,30 +283,33 @@ class SistemaOperativoGUI:
         ready_frame = tk.Frame(
             self.root,
             bg="#2b2b2b",
-            height=100
+            height=75
         )
-
         ready_frame.pack(fill="x")
 
         tk.Label(
             ready_frame,
-            text="procesos en espera",
-            font=("Arial", 16, "bold"),
+            text="Procesos en espera",
+            font=("Arial", 14, "bold"),
             fg="white",
             bg="#2b2b2b"
-        ).pack(anchor="w", padx=10)
+        ).pack(
+            anchor="w",
+            padx=10,
+            pady=(5, 0)
+        )
 
         self.ready_label = tk.Label(
             ready_frame,
             text="[]",
-            font=("Arial", 14),
+            font=("Arial", 13),
             fg="yellow",
             bg="#2b2b2b"
         )
-
         self.ready_label.pack(
             anchor="w",
-            padx=20
+            padx=20,
+            pady=(0, 5)
         )
 
         # =================================================
@@ -251,19 +319,17 @@ class SistemaOperativoGUI:
         metricas = tk.Frame(
             self.root,
             bg="#151515",
-            height=80
+            height=60
         )
-
         metricas.pack(fill="x")
 
         self.label_uso = tk.Label(
             metricas,
             text="Uso RAM: 0%",
-            font=("Arial", 14),
+            font=("Arial", 13),
             fg="lightgreen",
             bg="#151515"
         )
-
         self.label_uso.pack(
             side="left",
             padx=20,
@@ -273,12 +339,36 @@ class SistemaOperativoGUI:
         self.label_frag = tk.Label(
             metricas,
             text="Fragmentación: 0 KB",
-            font=("Arial", 14),
+            font=("Arial", 13),
             fg="orange",
             bg="#151515"
         )
-
         self.label_frag.pack(
+            side="left",
+            padx=20
+        )
+
+        # Métrica nueva de almacenamiento
+        self.label_disco = tk.Label(
+            metricas,
+            text="Uso Disco: 0%",
+            font=("Arial", 13),
+            fg="cyan",
+            bg="#151515"
+        )
+        self.label_disco.pack(
+            side="left",
+            padx=20
+        )
+
+        self.label_bloques_disco = tk.Label(
+            metricas,
+            text="Bloques libres: 64",
+            font=("Arial", 13),
+            fg="#DDA0DD",
+            bg="#151515"
+        )
+        self.label_bloques_disco.pack(
             side="left",
             padx=20
         )
@@ -291,23 +381,20 @@ class SistemaOperativoGUI:
             self.root,
             bg="#202020"
         )
-
         gantt_frame.pack(fill="x")
 
         tk.Label(
             gantt_frame,
             text="Diagrama de Gantt CPU",
-            font=("Arial", 16, "bold"),
+            font=("Arial", 14, "bold"),
             fg="white",
             bg="#202020"
-        ).pack()
+        ).pack(pady=(4, 0))
 
-        # Scroll horizontal
         scroll_x = tk.Scrollbar(
             gantt_frame,
             orient="horizontal"
         )
-
         scroll_x.pack(
             side="bottom",
             fill="x"
@@ -316,14 +403,13 @@ class SistemaOperativoGUI:
         self.canvas_gantt = tk.Canvas(
             gantt_frame,
             bg="white",
-            height=120,
+            height=105,
             xscrollcommand=scroll_x.set
         )
-
         self.canvas_gantt.pack(
             fill="x",
             padx=20,
-            pady=10
+            pady=5
         )
 
         scroll_x.config(
@@ -331,37 +417,106 @@ class SistemaOperativoGUI:
         )
 
         # =================================================
-        # MEMORIA
+        # CONTENEDOR DE RAM Y DISCO
         # =================================================
 
-        memoria_frame = tk.Frame(
+        recursos_frame = tk.Frame(
             self.root,
             bg="#1a1a1a"
         )
-
-        memoria_frame.pack(
+        recursos_frame.pack(
             fill="both",
             expand=True
         )
 
+        # Dividir el espacio en dos columnas
+        recursos_frame.grid_columnconfigure(
+            0,
+            weight=1
+        )
+        recursos_frame.grid_columnconfigure(
+            1,
+            weight=1
+        )
+        recursos_frame.grid_rowconfigure(
+            0,
+            weight=1
+        )
+
+        # =================================================
+        # MEMORIA RAM
+        # =================================================
+
+        memoria_frame = tk.Frame(
+            recursos_frame,
+            bg="#1a1a1a",
+            bd=1,
+            relief="solid"
+        )
+        memoria_frame.grid(
+            row=0,
+            column=0,
+            sticky="nsew",
+            padx=(10, 5),
+            pady=5
+        )
+
         tk.Label(
             memoria_frame,
-            text="Memoria",
-            font=("Arial", 16, "bold"),
+            text="Memoria RAM",
+            font=("Arial", 15, "bold"),
             fg="white",
             bg="#1a1a1a"
-        ).pack()
+        ).pack(pady=5)
 
         self.canvas = tk.Canvas(
             memoria_frame,
             bg="white",
-            height=220
+            height=230
+        )
+        self.canvas.pack(
+            fill="both",
+            expand=True,
+            padx=10,
+            pady=(0, 10)
         )
 
-        self.canvas.pack(
-            fill="x",
-            padx=20,
-            pady=20
+        # =================================================
+        # ALMACENAMIENTO EN DISCO
+        # =================================================
+
+        disco_frame = tk.Frame(
+            recursos_frame,
+            bg="#1a1a1a",
+            bd=1,
+            relief="solid"
+        )
+        disco_frame.grid(
+            row=0,
+            column=1,
+            sticky="nsew",
+            padx=(5, 10),
+            pady=5
+        )
+
+        tk.Label(
+            disco_frame,
+            text="Almacenamiento en Disco",
+            font=("Arial", 15, "bold"),
+            fg="white",
+            bg="#1a1a1a"
+        ).pack(pady=5)
+
+        self.canvas_disco = tk.Canvas(
+            disco_frame,
+            bg="white",
+            height=230
+        )
+        self.canvas_disco.pack(
+            fill="both",
+            expand=True,
+            padx=10,
+            pady=(0, 10)
         )
 
         # =================================================
@@ -370,12 +525,12 @@ class SistemaOperativoGUI:
 
         self.log = tk.Text(
             self.root,
-            height=10,
+            height=7,
             bg="black",
             fg="lime",
-            font=("Consolas", 11)
+            insertbackground="white",
+            font=("Consolas", 10)
         )
-
         self.log.pack(fill="both")
 
     # =====================================================
@@ -385,74 +540,112 @@ class SistemaOperativoGUI:
     def cargar_archivo(self):
 
         ruta = filedialog.askopenfilename(
-
+            title="Seleccionar archivo de procesos",
             filetypes=[
-                ("CSV files", "*.csv")
+                ("Archivos CSV", "*.csv")
             ]
         )
 
         if ruta:
-
             self.ruta_csv = ruta
 
             self.log.insert(
                 tk.END,
                 f"Archivo cargado: {ruta}\n"
             )
-
             self.log.see(tk.END)
 
     # =====================================================
-    # INICIAR
+    # INICIAR SIMULACIÓN
     # =====================================================
 
     def iniciar_simulacion(self):
 
-        procesos = leer_procesos(
-            self.ruta_csv
-        )
+        # Detener cualquier actualización anterior
+        if self.after_id is not None:
+            self.root.after_cancel(self.after_id)
+            self.after_id = None
 
-        self.sim = SimuladorSO(
+        try:
+            procesos = leer_procesos(
+                self.ruta_csv
+            )
 
-            procesos,
+            if not procesos:
+                self.escribir_log(
+                    "El archivo no contiene procesos."
+                )
+                return
 
-            algoritmo_cpu=self.cpu_var.get(),
+            self.sim = SimuladorSO(
+                procesos,
+                algoritmo_cpu=self.cpu_var.get(),
+                algoritmo_memoria=self.mem_var.get(),
+                algoritmo_almacenamiento=(
+                    self.storage_var.get()
+                )
+            )
 
-            algoritmo_memoria=self.mem_var.get()
-        )
+        except Exception as error:
+            self.escribir_log(
+                f"Error al iniciar: {error}"
+            )
+            return
 
-        # Reiniciar Gantt
+        self.simulacion_activa = True
+
+        # Reiniciar interfaz
         self.canvas_gantt.delete("all")
+        self.canvas.delete("all")
+        self.canvas_disco.delete("all")
+        self.log.delete("1.0", tk.END)
 
         self.gantt_x = 20
 
-        # =============================================
-        # GANTT DINÁMICO
-        # =============================================
-
+        # Ajustar dinámicamente el tamaño del Gantt
         total_cpu = sum(
-
-            p.ejecucion
-
-            for p in procesos
+            proceso.ejecucion
+            for proceso in procesos
         )
 
         self.bloque_gantt = max(
-
-            5,
-
+            8,
             1200 // max(total_cpu, 1)
+        )
+
+        self.escribir_log(
+            "Simulación iniciada"
+        )
+        self.escribir_log(
+            f"CPU: {self.cpu_var.get()}"
+        )
+        self.escribir_log(
+            f"RAM: {self.mem_var.get()}"
+        )
+        self.escribir_log(
+            f"Disco: {self.storage_var.get()}"
         )
 
         self.actualizar()
 
     # =====================================================
-    # ACTUALIZAR
+    # ACTUALIZAR SIMULACIÓN
     # =====================================================
 
     def actualizar(self):
 
-        self.sim.ejecutar_tick()
+        if not self.simulacion_activa:
+            return
+
+        try:
+            self.sim.ejecutar_tick()
+
+        except Exception as error:
+            self.simulacion_activa = False
+            self.escribir_log(
+                f"Error durante la simulación: {error}"
+            )
+            return
 
         # =============================================
         # TIEMPO
@@ -467,16 +660,10 @@ class SistemaOperativoGUI:
         # =============================================
 
         if self.sim.cpu:
-
             self.label_cpu.config(
-                text=(
-                    f"CPU: "
-                    f"{self.sim.cpu.nombre}"
-                )
+                text=f"CPU: {self.sim.cpu.nombre}"
             )
-
         else:
-
             self.label_cpu.config(
                 text="CPU: Libre"
             )
@@ -486,10 +673,8 @@ class SistemaOperativoGUI:
         # =============================================
 
         ready = [
-
-            p.nombre
-
-            for p in self.sim.ready_queue
+            proceso.nombre
+            for proceso in self.sim.ready_queue
         ]
 
         self.ready_label.config(
@@ -497,22 +682,56 @@ class SistemaOperativoGUI:
         )
 
         # =============================================
-        # MÉTRICAS
+        # MÉTRICAS DE MEMORIA RAM
         # =============================================
 
-        uso = self.sim.memoria.uso_memoria()
+        uso_ram = self.sim.memoria.uso_memoria()
 
-        frag = (
-            self.sim.memoria
-            .fragmentacion_externa()
+        fragmentacion = (
+            self.sim.memoria.fragmentacion_externa()
         )
 
         self.label_uso.config(
-            text=f"Uso RAM: {uso:.2f}%"
+            text=f"Uso RAM: {uso_ram:.2f}%"
         )
 
         self.label_frag.config(
-            text=f"Fragmentación: {frag} KB"
+            text=(
+                f"Fragmentación: "
+                f"{fragmentacion} KB"
+            )
+        )
+
+        # =============================================
+        # MÉTRICAS DE ALMACENAMIENTO
+        # =============================================
+
+        metricas_disco = (
+            self.sim.almacenamiento.obtener_metricas()
+        )
+
+        porcentaje_disco = metricas_disco.get(
+            "porcentaje_uso",
+            0
+        )
+
+        bloques_libres = metricas_disco.get(
+            "bloques_libres",
+            0
+        )
+
+        self.label_disco.config(
+            text=(
+                f"Uso Disco: "
+                f"{porcentaje_disco:.2f}%"
+            )
+        )
+
+        self.label_bloques_disco.config(
+            text=(
+                f"Bloques libres: "
+                f"{bloques_libres}"
+            )
         )
 
         # =============================================
@@ -520,7 +739,7 @@ class SistemaOperativoGUI:
         # =============================================
 
         self.dibujar_memoria()
-
+        self.dibujar_disco()
         self.actualizar_gantt()
 
         # =============================================
@@ -528,47 +747,56 @@ class SistemaOperativoGUI:
         # =============================================
 
         texto_cpu = (
-
             self.sim.cpu.nombre
-
             if self.sim.cpu
-
             else "Libre"
         )
 
-        self.log.insert(
-
-            tk.END,
-
+        self.escribir_log(
             f"Tiempo {self.sim.tiempo} "
-            f"| CPU: {texto_cpu}\n"
+            f"| CPU: {texto_cpu} "
+            f"| Ready: {ready} "
+            f"| RAM: {uso_ram:.2f}% "
+            f"| Disco: {porcentaje_disco:.2f}%"
         )
 
-        self.log.see(tk.END)
-
         # =============================================
-        # CONTINUAR
+        # CONTINUAR O FINALIZAR
         # =============================================
 
         if (
-
             len(self.sim.finalizados)
-
-            <
-
-            len(self.sim.procesos)
-
+            < len(self.sim.procesos)
         ):
-
-            self.root.after(
+            self.after_id = self.root.after(
                 self.velocidad.get(),
                 self.actualizar
-        )
-
+            )
         else:
+            self.simulacion_activa = False
+            self.after_id = None
+
+            self.label_cpu.config(
+                text="CPU: Libre"
+            )
+
+            self.escribir_log(
+                "Simulación finalizada correctamente."
+            )
 
             self.mostrar_metricas()
-            
+
+    # =====================================================
+    # ESCRIBIR EN EL LOG
+    # =====================================================
+
+    def escribir_log(self, texto):
+
+        self.log.insert(
+            tk.END,
+            texto + "\n"
+        )
+        self.log.see(tk.END)
 
     # =====================================================
     # MÉTRICAS FINALES
@@ -577,27 +805,19 @@ class SistemaOperativoGUI:
     def mostrar_metricas(self):
 
         resultados, prom_esp, prom_ret = (
-
             calcular_metricas(
                 self.sim.finalizados
             )
         )
 
         ventana = tk.Toplevel(self.root)
-
-        ventana.title(
-            "Métricas Finales"
-        )
-
-        ventana.geometry("700x400")
+        ventana.title("Métricas Finales")
+        ventana.geometry("760x450")
 
         tabla = tk.Text(
-
             ventana,
-
             font=("Consolas", 12)
         )
-
         tabla.pack(
             fill="both",
             expand=True,
@@ -606,7 +826,6 @@ class SistemaOperativoGUI:
         )
 
         encabezado = (
-
             f"{'Proceso':<10}"
             f"{'Llegada':<10}"
             f"{'CPU':<10}"
@@ -625,22 +844,25 @@ class SistemaOperativoGUI:
             "-" * 65 + "\n"
         )
 
-        for r in resultados:
+        for resultado in resultados:
 
             fila = (
-
-                f"{r['nombre']:<10}"
-                f"{r['llegada']:<10}"
-                f"{r['ejecucion']:<10}"
-                f"{r['fin']:<10}"
-                f"{r['retorno']:<12}"
-                f"{r['espera']:<10}\n"
+                f"{resultado['nombre']:<10}"
+                f"{resultado['llegada']:<10}"
+                f"{resultado['ejecucion']:<10}"
+                f"{resultado['fin']:<10}"
+                f"{resultado['retorno']:<12}"
+                f"{resultado['espera']:<10}\n"
             )
 
             tabla.insert(
                 tk.END,
                 fila
             )
+
+        metricas_disco = (
+            self.sim.almacenamiento.obtener_metricas()
+        )
 
         tabla.insert(
             tk.END,
@@ -649,201 +871,308 @@ class SistemaOperativoGUI:
 
         tabla.insert(
             tk.END,
-            f"Promedio Espera: "
+            f"Promedio de espera: "
             f"{prom_esp:.2f}\n"
         )
 
         tabla.insert(
             tk.END,
-            f"Promedio Retorno: "
+            f"Promedio de retorno: "
             f"{prom_ret:.2f}\n"
         )
 
+        tabla.insert(
+            tk.END,
+            f"Algoritmo CPU: "
+            f"{self.sim.algoritmo_cpu}\n"
+        )
+
+        tabla.insert(
+            tk.END,
+            f"Algoritmo RAM: "
+            f"{self.sim.algoritmo_memoria}\n"
+        )
+
+        tabla.insert(
+            tk.END,
+            f"Algoritmo de disco: "
+            f"{self.sim.algoritmo_almacenamiento}\n"
+        )
+
+        tabla.insert(
+            tk.END,
+            f"Uso final del disco: "
+            f"{metricas_disco.get('porcentaje_uso', 0):.2f}%\n"
+        )
+
+        tabla.config(
+            state="disabled"
+        )
+
     # =====================================================
-    # GANTT
+    # DIAGRAMA DE GANTT
     # =====================================================
 
     def actualizar_gantt(self):
 
-    # ==========================================
-    # NO DIBUJAR SI CPU ESTÁ LIBRE
-    # ==========================================
-
+        # No dibujar si la CPU está libre
         if self.sim.cpu is None:
             return
 
         proceso = self.sim.cpu.nombre
-
-    # ==========================================
-    # COLORES
-    # ==========================================
-
-    # Generar color automático según número de proceso
-
-        numero = int(
-            proceso.replace("P", "")
-)
-
-        lista_colores = [
-
-    "#87CEEB",
-    "#90EE90",
-    "#FFA500",
-    "#FFC0CB",
-    "#FFFF00",
-    "#FF6347",
-    "#40E0D0",
-    "#9370DB",
-    "#00FA9A",
-    "#FF69B4",
-    "#CD5C5C",
-    "#7B68EE",
-    "#3CB371",
-    "#FFD700",
-    "#6495ED",
-    "#DC143C",
-    "#00CED1",
-    "#BA55D3",
-    "#F4A460",
-    "#20B2AA"
-
-]
-
-        color = lista_colores[
-            numero % len(lista_colores)
-]
-
-    # ==========================================
-    # POSICIONES
-    # ==========================================
+        color = self.obtener_color_proceso(proceso)
 
         x1 = self.gantt_x
-
         x2 = x1 + self.bloque_gantt
-
-    # ==========================================
-    # DIBUJAR BLOQUE
-    # ==========================================
 
         self.canvas_gantt.create_rectangle(
             x1,
-            30,
+            25,
             x2,
-            80,
+            75,
             fill=color,
             outline="black"
-    )
-
-    # ==========================================
-    # TEXTO DEL PROCESO
-    # ==========================================
+        )
 
         if self.bloque_gantt >= 15:
-
             self.canvas_gantt.create_text(
-                (x1 + x2) // 2,
-                55,
+                (x1 + x2) / 2,
+                50,
                 text=proceso,
-                font=("Arial", 8)
-        )
-
-    # ==========================================
-    # TIEMPO
-    # ==========================================
+                font=("Arial", 8, "bold")
+            )
 
         if self.bloque_gantt >= 10:
-
             self.canvas_gantt.create_text(
                 x1,
-                90,
+                88,
                 text=str(self.sim.tiempo),
                 font=("Arial", 7)
-        )
-
-    # ==========================================
-    # AVANZAR GANTT
-    # ==========================================
+            )
 
         self.gantt_x += self.bloque_gantt
-
-    # ==========================================
-    # SCROLL AUTOMÁTICO
-    # ==========================================
 
         self.canvas_gantt.config(
             scrollregion=(
                 0,
                 0,
                 self.gantt_x + 200,
-                120
+                105
+            )
         )
-    )
 
         self.canvas_gantt.xview_moveto(1)
+
     # =====================================================
-    # MEMORIA
+    # OBTENER COLOR DE UN PROCESO
+    # =====================================================
+
+    def obtener_color_proceso(self, nombre):
+
+        valor = sum(
+            ord(caracter)
+            for caracter in nombre
+        )
+
+        posicion = valor % len(
+            self.lista_colores
+        )
+
+        return self.lista_colores[posicion]
+
+    # =====================================================
+    # DIBUJAR MEMORIA RAM
     # =====================================================
 
     def dibujar_memoria(self):
 
         self.canvas.delete("all")
+        self.canvas.update_idletasks()
 
-        ancho_total = 1200
+        ancho_canvas = self.canvas.winfo_width()
 
-        x = 10
+        if ancho_canvas <= 1:
+            ancho_canvas = 620
+
+        ancho_util = ancho_canvas - 30
+        x = 15
 
         for bloque in self.sim.memoria.bloques:
 
             ancho = (
+                bloque.tamaño
+                / self.sim.memoria.tamaño_total
+            ) * ancho_util
 
-                bloque.tamaño /
-
-                self.sim.memoria.tamaño_total
-
-            ) * ancho_total
-
-            color = (
-
-                "lightgreen"
-
-                if bloque.libre
-
-                else "skyblue"
-            )
+            if bloque.libre:
+                color = "#DFFFD6"
+                texto = "Libre"
+            else:
+                texto = bloque.proceso.nombre
+                color = self.obtener_color_proceso(
+                    texto
+                )
 
             self.canvas.create_rectangle(
-
                 x,
-
                 50,
-
                 x + ancho,
-
-                170,
-
+                180,
                 fill=color,
-
                 outline="black"
             )
 
-            texto = (
-
-                "Libre"
-
-                if bloque.libre
-
-                else bloque.proceso.nombre
-            )
-
-            self.canvas.create_text(
-
-                x + ancho / 2,
-
-                110,
-
-                text=f"{texto}\n{bloque.tamaño} KB",
-
-                font=("Arial", 10, "bold")
-            )
+            # Mostrar texto solamente si el bloque
+            # tiene suficiente espacio visual.
+            if ancho >= 35:
+                self.canvas.create_text(
+                    x + ancho / 2,
+                    115,
+                    text=(
+                        f"{texto}\n"
+                        f"{bloque.tamaño} KB"
+                    ),
+                    font=("Arial", 9, "bold")
+                )
 
             x += ancho
+
+        self.canvas.create_text(
+            15,
+            25,
+            text="0 KB",
+            anchor="w",
+            font=("Arial", 9)
+        )
+
+        self.canvas.create_text(
+            ancho_canvas - 15,
+            25,
+            text=(
+                f"{self.sim.memoria.tamaño_total} KB"
+            ),
+            anchor="e",
+            font=("Arial", 9)
+        )
+
+    # =====================================================
+    # DIBUJAR ALMACENAMIENTO EN DISCO
+    # =====================================================
+
+    def dibujar_disco(self):
+
+        self.canvas_disco.delete("all")
+        self.canvas_disco.update_idletasks()
+
+        disco = self.sim.almacenamiento.disco
+
+        total_bloques = len(disco)
+
+        if total_bloques == 0:
+            return
+
+        # Distribución visual de los bloques
+        columnas = 8
+
+        filas = (
+            total_bloques + columnas - 1
+        ) // columnas
+
+        ancho_canvas = self.canvas_disco.winfo_width()
+        alto_canvas = self.canvas_disco.winfo_height()
+
+        if ancho_canvas <= 1:
+            ancho_canvas = 620
+
+        if alto_canvas <= 1:
+            alto_canvas = 230
+
+        margen_x = 15
+        margen_y = 15
+        espacio = 4
+
+        ancho_bloque = (
+            ancho_canvas
+            - (margen_x * 2)
+            - (espacio * (columnas - 1))
+        ) / columnas
+
+        alto_bloque = (
+            alto_canvas
+            - (margen_y * 2)
+            - (espacio * (filas - 1))
+        ) / filas
+
+        for indice, contenido in enumerate(disco):
+
+            fila = indice // columnas
+            columna = indice % columnas
+
+            x1 = (
+                margen_x
+                + columna * (ancho_bloque + espacio)
+            )
+
+            y1 = (
+                margen_y
+                + fila * (alto_bloque + espacio)
+            )
+
+            x2 = x1 + ancho_bloque
+            y2 = y1 + alto_bloque
+
+            if contenido is None:
+                color = "#F2F2F2"
+                texto = "Libre"
+            else:
+                # Normalmente el contenido es el nombre
+                # del archivo o proceso.
+                nombre = str(contenido)
+
+                color = self.obtener_color_proceso(
+                    nombre
+                )
+
+                texto = nombre
+
+            self.canvas_disco.create_rectangle(
+                x1,
+                y1,
+                x2,
+                y2,
+                fill=color,
+                outline="#333333",
+                width=1
+            )
+
+            # Número del bloque
+            self.canvas_disco.create_text(
+                x1 + 4,
+                y1 + 4,
+                text=str(indice),
+                anchor="nw",
+                font=("Arial", 7),
+                fill="#333333"
+            )
+
+            # Nombre del proceso o estado libre
+            if ancho_bloque >= 45 and alto_bloque >= 20:
+                self.canvas_disco.create_text(
+                    (x1 + x2) / 2,
+                    (y1 + y2) / 2 + 3,
+                    text=texto,
+                    font=("Arial", 8, "bold")
+                )
+
+
+# =========================================================
+# EJECUTAR LA APLICACIÓN
+# =========================================================
+
+if __name__ == "__main__":
+
+    root = tk.Tk()
+
+    aplicacion = SistemaOperativoGUI(root)
+
+    root.mainloop()

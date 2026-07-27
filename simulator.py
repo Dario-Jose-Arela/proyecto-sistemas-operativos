@@ -1,4 +1,5 @@
 from memory_manager import GestorMemoria
+from storage_manager import GestorAlmacenamiento
 
 
 class SimuladorSO:
@@ -7,30 +8,82 @@ class SimuladorSO:
         self,
         procesos,
         algoritmo_cpu="FCFS",
-        algoritmo_memoria="First Fit"
+        algoritmo_memoria="First Fit",
+        algoritmo_almacenamiento="Contigua",
+        quantum=2
     ):
+        # ==========================================
+        # MEMORIA RAM
+        # ==========================================
 
         self.memoria = GestorMemoria(1024)
 
+        # ==========================================
+        # ALMACENAMIENTO EN DISCO
+        # ==========================================
+
+        self.almacenamiento = GestorAlmacenamiento(
+            bloques=64,
+            tam_bloque=4,
+            algoritmo=algoritmo_almacenamiento
+        )
+
+        # ==========================================
+        # INFORMACIÓN GENERAL
+        # ==========================================
+
         self.tiempo = 0
-
         self.procesos = procesos
-
         self.ready_queue = []
-
         self.finalizados = []
 
         # Algoritmos seleccionados
         self.algoritmo_cpu = algoritmo_cpu
-
         self.algoritmo_memoria = algoritmo_memoria
+        self.algoritmo_almacenamiento = (
+            algoritmo_almacenamiento
+        )
 
         # CPU actual
         self.cpu = None
-        # Round Robin
-        self.quantum = 2
 
+        # Round Robin
+        self.quantum = max(1, int(quantum))
         self.quantum_actual = 0
+
+    # ==========================================
+    # ASIGNAR MEMORIA RAM
+    # ==========================================
+
+    def asignar_memoria(self, proceso):
+
+        if self.algoritmo_memoria == "First Fit":
+            return self.memoria.first_fit(proceso)
+
+        elif self.algoritmo_memoria == "Best Fit":
+            return self.memoria.best_fit(proceso)
+
+        elif self.algoritmo_memoria == "Worst Fit":
+            return self.memoria.worst_fit(proceso)
+
+        else:
+            return self.memoria.first_fit(proceso)
+
+    # ==========================================
+    # ASIGNAR ALMACENAMIENTO
+    # ==========================================
+
+    def asignar_almacenamiento(self, proceso):
+
+        # Mientras el CSV todavía no tenga almacenamiento,
+        # los procesos con valor 0 no ocuparán disco.
+        if proceso.almacenamiento <= 0:
+            return True
+
+        return self.almacenamiento.asignar(
+            proceso.nombre,
+            proceso.almacenamiento
+        )
 
     # ==========================================
     # LLEGADA DE PROCESOS
@@ -42,66 +95,70 @@ class SimuladorSO:
 
             if (
                 proceso.llegada <= self.tiempo
-                and
-                not proceso.cargado
+                and not proceso.cargado
             ):
-
                 print(
                     f"[Tiempo {self.tiempo}] "
                     f"Llegó {proceso.nombre}"
                 )
 
-                # ==========================
-                # ASIGNACIÓN MEMORIA
-                # ==========================
-
-                if self.algoritmo_memoria == "First Fit":
-
-                    asignado = self.memoria.first_fit(
-                        proceso
-                    )
-
-                elif self.algoritmo_memoria == "Best Fit":
-
-                    asignado = self.memoria.best_fit(
-                        proceso
-                    )
-
-                elif self.algoritmo_memoria == "Worst Fit":
-
-                    asignado = self.memoria.worst_fit(
-                        proceso
-                    )
-
-                else:
-
-                    asignado = self.memoria.first_fit(
-                        proceso
-                    )
-
-                # ==========================
-                # SI ENTRA A MEMORIA
-                # ==========================
-
-                if asignado:
-
-                    print(
-                        f"{proceso.nombre} "
-                        f"entró a memoria"
-                    )
-
-                    proceso.cargado = True
-
-                    self.ready_queue.append(
-                        proceso
+                # Primero se intenta asignar RAM
+                memoria_asignada = self.asignar_memoria(
+                    proceso
                 )
 
-                else:
-
+                if not memoria_asignada:
                     print(
-                        f"NO hay memoria para "
+                        f"NO hay memoria RAM para "
                         f"{proceso.nombre}"
                     )
+                    continue
+
+                print(
+                    f"{proceso.nombre} entró a memoria RAM"
+                )
+
+                # Después se intenta asignar disco
+                disco_asignado = (
+                    self.asignar_almacenamiento(proceso)
+                )
+
+                if not disco_asignado:
+                    print(
+                        f"NO hay almacenamiento para "
+                        f"{proceso.nombre}"
+                    )
+
+                    # Si no entra al disco, se deshace
+                    # la asignación que se realizó en RAM.
+                    self.memoria.liberar(proceso)
+
+                    continue
+
+                if proceso.almacenamiento > 0:
+                    print(
+                        f"{proceso.nombre} ocupó "
+                        f"{proceso.almacenamiento} KB "
+                        f"en disco"
+                    )
+
+                proceso.cargado = True
+
+                self.ready_queue.append(proceso)
+
+                print(
+                    f"{proceso.nombre} ingresó a "
+                    f"la Ready Queue"
+                )
+
+    # ==========================================
+    # REGISTRAR INICIO
+    # ==========================================
+
+    def registrar_inicio(self, proceso):
+
+        if proceso.inicio is None:
+            proceso.inicio = self.tiempo
 
     # ==========================================
     # FCFS
@@ -109,16 +166,16 @@ class SimuladorSO:
 
     def planificar_fcfs(self):
 
-        if self.cpu is None:
+        if self.cpu is None and self.ready_queue:
 
-            if self.ready_queue:
+            self.cpu = self.ready_queue.pop(0)
 
-                self.cpu = self.ready_queue.pop(0)
+            self.registrar_inicio(self.cpu)
 
-                print(
-                    f"CPU asignado a "
-                    f"{self.cpu.nombre}"
-                )
+            print(
+                f"FCFS asignó CPU a "
+                f"{self.cpu.nombre}"
+            )
 
     # ==========================================
     # SPN
@@ -126,20 +183,20 @@ class SimuladorSO:
 
     def planificar_spn(self):
 
-        if self.cpu is None:
+        if self.cpu is None and self.ready_queue:
 
-            if self.ready_queue:
+            self.ready_queue.sort(
+                key=lambda proceso: proceso.ejecucion
+            )
 
-                self.ready_queue.sort(
-                    key=lambda p: p.ejecucion
-                )
+            self.cpu = self.ready_queue.pop(0)
 
-                self.cpu = self.ready_queue.pop(0)
+            self.registrar_inicio(self.cpu)
 
-                print(
-                    f"SPN seleccionó "
-                    f"{self.cpu.nombre}"
-                )
+            print(
+                f"SPN seleccionó "
+                f"{self.cpu.nombre}"
+            )
 
     # ==========================================
     # SRT
@@ -147,92 +204,85 @@ class SimuladorSO:
 
     def planificar_srt(self):
 
-        # Si hay proceso ejecutándose
         if self.cpu is not None:
+            self.ready_queue.append(self.cpu)
+            self.cpu = None
 
-            self.ready_queue.append(
-                self.cpu
-            )
-
-        # Elegir menor restante
         if self.ready_queue:
 
             self.ready_queue.sort(
-                key=lambda p: p.restante
+                key=lambda proceso: proceso.restante
             )
 
-            nuevo = self.ready_queue.pop(0)
+            self.cpu = self.ready_queue.pop(0)
 
-            if self.cpu != nuevo:
+            self.registrar_inicio(self.cpu)
 
-                print(
-                    f"SRT cambia CPU a "
-                    f"{nuevo.nombre}"
-                )
-
-            self.cpu = nuevo
+            print(
+                f"SRT seleccionó "
+                f"{self.cpu.nombre}"
+            )
 
     # ==========================================
-    # ROUND ROBIN (temporal)
+    # ROUND ROBIN
     # ==========================================
 
     def planificar_rr(self):
 
-    # ======================================
-    # CPU LIBRE
-    # ======================================
+        # Round Robin únicamente selecciona otro
+        # proceso cuando la CPU está libre.
+        if self.cpu is None and self.ready_queue:
 
-        if self.cpu is None:
+            self.cpu = self.ready_queue.pop(0)
+            self.quantum_actual = 0
 
-            if self.ready_queue:
-
-                self.cpu = self.ready_queue.pop(0)
-
-                self.quantum_actual = 0
+            self.registrar_inicio(self.cpu)
 
             print(
-                f"RR asignó "
+                f"RR asignó CPU a "
                 f"{self.cpu.nombre}"
             )
 
-    # ======================================
-    # CPU OCUPADA
-    # ======================================
+    # ==========================================
+    # FINALIZAR PROCESO
+    # ==========================================
 
-        else:
+    def finalizar_proceso(self):
 
-        # Aumentar quantum usado
-            self.quantum_actual += 1
+        proceso = self.cpu
 
-        # Quantum terminado
-        if self.quantum_actual >= self.quantum:
+        # Liberar memoria RAM
+        self.memoria.liberar(proceso)
 
-            print(
-                f"Quantum terminado "
-                f"para {self.cpu.nombre}"
+        # Liberar almacenamiento en disco
+        if proceso.almacenamiento > 0:
+            self.almacenamiento.liberar(
+                proceso.nombre
             )
 
-            # Si aún no termina
-            if self.cpu.restante > 0:
+        proceso.fin = self.tiempo + 1
 
-                self.ready_queue.append(
-                    self.cpu
-                )
+        proceso.retorno = (
+            proceso.fin - proceso.llegada
+        )
 
-            # Liberar CPU
-            self.cpu = None
+        proceso.espera = (
+            proceso.retorno - proceso.ejecucion
+        )
 
-            self.quantum_actual = 0
+        self.finalizados.append(proceso)
 
-            # Asignar siguiente proceso
-            if self.ready_queue:
+        print(
+            f"{proceso.nombre} TERMINÓ"
+        )
 
-                self.cpu = self.ready_queue.pop(0)
+        print(
+            f"{proceso.nombre} liberó su RAM "
+            f"y sus bloques de disco"
+        )
 
-                print(
-                    f"RR cambia a "
-                    f"{self.cpu.nombre}"
-                )
+        self.cpu = None
+        self.quantum_actual = 0
 
     # ==========================================
     # EJECUTAR CPU
@@ -240,36 +290,38 @@ class SimuladorSO:
 
     def ejecutar_cpu(self):
 
-        if self.cpu is not None:
+        if self.cpu is None:
+            print("CPU inactiva")
+            return
 
-            self.cpu.restante -= 1
+        self.cpu.restante -= 1
 
-            print(
-                f"Ejecutando {self.cpu.nombre} "
-                f"| Restante: {self.cpu.restante}"
-            )
+        print(
+            f"Ejecutando {self.cpu.nombre} "
+            f"| Restante: {self.cpu.restante}"
+        )
 
-            # TERMINA
-            if self.cpu.restante == 0:
+        # El proceso terminó
+        if self.cpu.restante <= 0:
+            self.finalizar_proceso()
+            return
 
-                self.memoria.liberar(
-                    self.cpu
-                )
+        # Control del quantum únicamente en RR
+        if self.algoritmo_cpu == "RR":
 
-                self.cpu.fin = (
-                    self.tiempo + 1
-                )
+            self.quantum_actual += 1
 
-                self.finalizados.append(
-                    self.cpu
-                )
+            if self.quantum_actual >= self.quantum:
 
                 print(
-                    f"{self.cpu.nombre} TERMINÓ"
+                    f"Quantum terminado para "
+                    f"{self.cpu.nombre}"
                 )
 
+                self.ready_queue.append(self.cpu)
+
                 self.cpu = None
-                self.quantum_actual = 1
+                self.quantum_actual = 0
 
     # ==========================================
     # READY QUEUE
@@ -278,15 +330,53 @@ class SimuladorSO:
     def mostrar_ready(self):
 
         nombres = [
-
-            p.nombre
-
-            for p in self.ready_queue
+            proceso.nombre
+            for proceso in self.ready_queue
         ]
 
         print(
             "Ready Queue:",
             nombres
+        )
+
+    # ==========================================
+    # MOSTRAR ALMACENAMIENTO
+    # ==========================================
+
+    def mostrar_almacenamiento(self):
+
+        print("\nALMACENAMIENTO:")
+
+        bloques_ocupados = []
+
+        for numero, contenido in enumerate(
+            self.almacenamiento.disco
+        ):
+            if contenido is not None:
+                bloques_ocupados.append(
+                    f"{numero}:{contenido}"
+                )
+
+        if bloques_ocupados:
+            print(
+                "Bloques ocupados:",
+                " | ".join(bloques_ocupados)
+            )
+        else:
+            print("Todos los bloques están libres")
+
+        metricas = (
+            self.almacenamiento.obtener_metricas()
+        )
+
+        print(
+            f"Uso del disco: "
+            f"{metricas['porcentaje_uso']:.2f}%"
+        )
+
+        print(
+            f"Bloques libres: "
+            f"{metricas['bloques_libres']}"
         )
 
     # ==========================================
@@ -300,51 +390,37 @@ class SimuladorSO:
             f"{self.tiempo} ====="
         )
 
-        # Llegadas
+        # Llegada de procesos
         self.procesos_llegados()
 
-        # ==========================
-        # PLANIFICACIÓN CPU
-        # ==========================
-
+        # Planificación de CPU
         if self.algoritmo_cpu == "FCFS":
-
             self.planificar_fcfs()
 
         elif self.algoritmo_cpu == "SPN":
-
             self.planificar_spn()
 
         elif self.algoritmo_cpu == "SRT":
-
             self.planificar_srt()
 
         elif self.algoritmo_cpu == "RR":
-
             self.planificar_rr()
 
-        # ==========================
-        # EJECUTAR CPU
-        # ==========================
+        else:
+            self.planificar_fcfs()
 
+        # Ejecutar una unidad de CPU
         self.ejecutar_cpu()
 
-        # ==========================
-        # MOSTRAR READY
-        # ==========================
-
+        # Mostrar Ready Queue
         self.mostrar_ready()
 
-        # ==========================
-        # MEMORIA
-        # ==========================
-
-        print("\nMEMORIA:")
-
+        # Mostrar memoria RAM
+        print("\nMEMORIA RAM:")
         self.memoria.mostrar_memoria()
 
-        # ==========================
-        # AVANZAR TIEMPO
-        # ==========================
+        # Mostrar almacenamiento
+        self.mostrar_almacenamiento()
 
+        # Avanzar tiempo
         self.tiempo += 1
